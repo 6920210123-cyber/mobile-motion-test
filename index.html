@@ -3,209 +3,811 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ทดสอบรับค่า Motion มือถือ</title>
+  <title>3D Mobile Motion Viewer</title>
+
+  <!-- MQTT.js & QRCode.js via CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Three.js Import Map -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
       margin: 0;
-      padding: 20px;
-      text-align: center;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0b1120;
+      color: #f8fafc;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
-    .btn {
-      background: #3b82f6;
-      color: white;
-      border: none;
-      padding: 14px 28px;
+
+    /* แถบด้านบน */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      background: #111827;
+      border-bottom: 1px solid #1e293b;
+      gap: 10px;
+      flex-wrap: wrap;
+      z-index: 10;
+    }
+    .brand {
+      font-weight: 700;
       font-size: 16px;
-      font-weight: bold;
-      border-radius: 10px;
-      cursor: pointer;
-      margin-bottom: 16px;
-    }
-    .btn:disabled {
-      background: #475569;
-      cursor: not-allowed;
-    }
-    .warning {
-      background: #991b1b;
-      color: #fecaca;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      display: none;
-      font-size: 14px;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 12px;
-      max-width: 800px;
-      margin: 0 auto 20px;
-      text-align: left;
-    }
-    .card {
-      background: #1e293b;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid #334155;
-    }
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 15px;
       color: #38bdf8;
     }
-    .val {
-      font-family: monospace;
-      font-size: 15px;
-      margin: 4px 0;
+    .mode-switch {
+      display: flex;
+      gap: 8px;
     }
-    /* กล่องจำลองลูกบอลกลิ้งตามความเอียง */
-    .arena {
-      width: 240px;
-      height: 240px;
+    .tab-btn {
       background: #1e293b;
-      border: 2px solid #38bdf8;
-      border-radius: 50%;
-      margin: 0 auto;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .tab-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #3b82f6;
+    }
+
+    /* โหมดหน้าจอคอม (3D Viewer) */
+    #pc-view {
+      flex: 1;
+      display: flex;
       position: relative;
       overflow: hidden;
     }
-    .ball {
-      width: 30px;
-      height: 30px;
-      background: #f43f5e;
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #172554 0%, #0b1120 75%);
+    }
+    .sidebar {
+      width: 310px;
+      background: rgba(15, 23, 42, 0.92);
+      border-left: 1px solid #1e293b;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 5;
+    }
+    .panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .panel h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .room-code {
+      font-family: monospace;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 4px;
+      color: #facc15;
+      text-align: center;
+      margin: 4px 0 10px;
+    }
+    #qrcode {
+      background: #ffffff;
+      padding: 10px;
+      border-radius: 10px;
+      width: fit-content;
+      margin: 0 auto 8px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      width: 100%;
+      justify-content: center;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
+      background: #f59e0b;
+    }
+    .dot.ok { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+    .dot.err { background: #ef4444; }
+
+    .btn-action {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #0284c7;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-action:hover { background: #0369a1; }
+
+    .data-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 3px 0;
+      border-bottom: 1px dashed #334155;
+    }
+    .data-row:last-child { border-bottom: none; }
+
+    .hint-overlay {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 12px #f43f5e;
+      bottom: 14px;
+      left: 14px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid #334155;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+      pointer-events: none;
+    }
+
+    /* โหมดมือถือ (Controller) */
+    #phone-view {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow-y: auto;
+      gap: 14px;
+    }
+    .phone-card {
+      width: 100%;
+      max-width: 380px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+    .room-input {
+      width: 100%;
+      padding: 12px;
+      font-size: 20px;
+      font-family: monospace;
+      font-weight: bold;
+      text-align: center;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      border-radius: 10px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #facc15;
+      margin: 10px 0 14px;
+    }
+    .btn-big {
+      width: 100%;
+      padding: 15px;
+      font-size: 16px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      background: #22c55e;
+      color: #052e16;
+      cursor: pointer;
+    }
+    .btn-big:disabled {
+      background: #334155;
+      color: #94a3b8;
+    }
+    .btn-secondary {
+      width: 100%;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid #38bdf8;
+      border-radius: 10px;
+      background: transparent;
+      color: #38bdf8;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .warning-box {
+      background: #7f1d1d;
+      color: #fecaca;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 10px;
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      #pc-view { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        height: 44%;
+        border-left: none;
+        border-top: 1px solid #1e293b;
+      }
     }
   </style>
 </head>
 <body>
 
-  <h2>📱 ทดสอบเซนเซอร์ Motion มือถือ</h2>
+  <header>
+    <div class="brand">📱 3D Motion Monitor</div>
+    <div class="mode-switch">
+      <button id="btnPcMode" class="tab-btn active">🖥️ จอคอม (ดู 3 มิติ)</button>
+      <button id="btnPhoneMode" class="tab-btn">📱 มือถือ (ตัวส่งค่า)</button>
+    </div>
+  </header>
 
-  <div id="httpsWarning" class="warning">
-    ⚠️ เว็บนี้ไม่ได้เปิดผ่าน <b>HTTPS</b> เบราว์เซอร์บนมือถืออาจบล็อกไม่ให้อ่านค่าเซนเซอร์ได้
+  <!-- ==================== 1. โหมดจอคอม (3D Viewer) ==================== -->
+  <div id="pc-view">
+    <div id="canvas-container">
+      <div class="hint-overlay">🖱️ ลากเมาส์เพื่อหมุนมุมกล้อง • Scroll เพื่อซูม</div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="panel">
+        <h3>1. เชื่อมต่อจากมือถือ</h3>
+        <div class="status-badge">
+          <span id="pcDot" class="dot"></span>
+          <span id="pcStatusText">กำลังเชื่อมต่อเซิร์ฟเวอร์...</span>
+        </div>
+        <p style="font-size: 12px; color: #94a3b8; margin: 10px 0 2px; text-align: center;">รหัสห้อง (Room ID)</p>
+        <div id="pcRoomCode" class="room-code">-----</div>
+        <div id="qrcode"></div>
+        <p style="font-size: 12px; color: #cbd5e1; margin: 0; text-align: center;">
+          ใช้กล้องมือถือสแกน QR Code ด้านบนเพื่อเชื่อมต่ออัตโนมัติ
+        </p>
+      </div>
+
+      <div class="panel">
+        <h3>2. ควบคุมมุมมอง</h3>
+        <button id="recenterBtn" class="btn-action">🎯 ปรับหน้าตรง (Zero Yaw)</button>
+        <p style="font-size: 11px; color: #94a3b8; margin: 6px 0 0;">
+          กดปุ่มนี้ขณะที่ถือมือถือหันเข้าหาจอคอม เพื่อให้โมเดล 3 มิติหันตรงกับตัวคุณ
+        </p>
+      </div>
+
+      <div class="panel">
+        <h3>3. ค่าเซนเซอร์ Real-time</h3>
+        <div class="data-row"><span>Alpha (หมุน):</span><span id="v-a">0.0°</span></div>
+        <div class="data-row"><span>Beta (ก้ม-เงย):</span><span id="v-b">0.0°</span></div>
+        <div class="data-row"><span>Gamma (เอียง):</span><span id="v-g">0.0°</span></div>
+        <div class="data-row"><span>Acc X:</span><span id="v-ax">0.00</span></div>
+        <div class="data-row"><span>Acc Y:</span><span id="v-ay">0.00</span></div>
+        <div class="data-row"><span>Acc Z:</span><span id="v-az">0.00</span></div>
+        <div class="data-row"><span>อัตราการรับ:</span><span id="v-fps">0 pkt/s</span></div>
+      </div>
+    </aside>
   </div>
 
-  <button id="startBtn" class="btn">เริ่มอ่านค่าเซนเซอร์</button>
-  <p id="status" style="color: #94a3b8; font-size: 14px;">กดปุ่มด้านบนเพื่อขอสิทธิ์และเริ่มทำงาน</p>
+  <!-- ==================== 2. โหมดมือถือ (Controller) ==================== -->
+  <div id="phone-view">
+    <div class="phone-card">
+      <div id="phoneHttpsWarn" class="warning-box">
+        ⚠️ เว็บไม่ได้เปิดผ่าน HTTPS เซนเซอร์อาจถูกบล็อก
+      </div>
+      <h2 style="margin: 0 0 6px; font-size: 20px;">📱 ส่งค่า Motion เข้าคอม</h2>
+      <p style="margin: 0; font-size: 13px; color: #94a3b8;">
+        กรอกรหัสห้องที่แสดงบนหน้าจอคอม
+      </p>
 
-  <div class="grid">
-    <div class="card">
-      <h3>ความเร่ง (Acceleration - ไม่รวมแรงโน้มถ่วง)</h3>
-      <div class="val">X (ซ้าย-ขวา): <span id="ax">0</span> m/s²</div>
-      <div class="val">Y (บน-ล่าง): <span id="ay">0</span> m/s²</div>
-      <div class="val">Z (หน้า-หลัง): <span id="az">0</span> m/s²</div>
-    </div>
+      <input id="phoneRoomInput" class="room-input" maxlength="8" placeholder="เช่น A7K9X" />
 
-    <div class="card">
-      <h3>ความเร่งรวมแรงโน้มถ่วง (Incl. Gravity)</h3>
-      <div class="val">X: <span id="gx">0</span> m/s²</div>
-      <div class="val">Y: <span id="gy">0</span> m/s²</div>
-      <div class="val">Z: <span id="gz">0</span> m/s²</div>
-    </div>
+      <div class="status-badge" style="margin-bottom: 14px;">
+        <span id="phoneDot" class="dot"></span>
+        <span id="phoneStatusText">รอการเชื่อมต่อ</span>
+      </div>
 
-    <div class="card">
-      <h3>ความเร็วการหมุน (Gyroscope)</h3>
-      <div class="val">Alpha (Z): <span id="ra">0</span> °/s</div>
-      <div class="val">Beta (X): <span id="rb">0</span> °/s</div>
-      <div class="val">Gamma (Y): <span id="rg">0</span> °/s</div>
-    </div>
+      <button id="startSendBtn" class="btn-big">🚀 เริ่มเชื่อมต่อและส่งค่า</button>
+      <button id="phoneRecenterBtn" class="btn-secondary" style="display: none;">🎯 ปรับหน้าตรงบนจอคอม</button>
 
-    <div class="card">
-      <h3>มุมเอียงของเครื่อง (Orientation)</h3>
-      <div class="val">Alpha (หมุนแนวราบ): <span id="oa">0</span>°</div>
-      <div class="val">Beta (ก้ม-เงย): <span id="ob">0</span>°</div>
-      <div class="val">Gamma (เอียงซ้าย-ขวา): <span id="og">0</span>°</div>
+      <div style="margin-top: 16px; text-align: left;">
+        <div class="data-row"><span>Alpha:</span><span id="m-a">0.0°</span></div>
+        <div class="data-row"><span>Beta:</span><span id="m-b">0.0°</span></div>
+        <div class="data-row"><span>Gamma:</span><span id="m-g">0.0°</span></div>
+        <div class="data-row"><span>Shake / Acc:</span><span id="m-acc">0.00</span></div>
+      </div>
     </div>
   </div>
 
-  <p style="font-size: 14px; color: #cbd5e1;">ลองเอียงมือถือเพื่อขยับลูกบอล</p>
-  <div class="arena">
-    <div id="ball" class="ball"></div>
-  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-  <script>
-    const startBtn = document.getElementById('startBtn');
-    const statusText = document.getElementById('status');
-    const httpsWarning = document.getElementById('httpsWarning');
-    const ball = document.getElementById('ball');
+    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const TOPIC_PREFIX = 'motion3d/v1/';
 
-    // เช็คว่าเป็น HTTPS หรือไม่
-    if (!window.isSecureContext) {
-      httpsWarning.style.display = 'block';
+    const params = new URLSearchParams(window.location.search);
+    const urlMode = params.get('mode');
+    const urlRoom = params.get('room');
+
+    // UI Elements
+    const pcView = document.getElementById('pc-view');
+    const phoneView = document.getElementById('phone-view');
+    const btnPcMode = document.getElementById('btnPcMode');
+    const btnPhoneMode = document.getElementById('btnPhoneMode');
+
+    // สร้างรหัสห้องแบบสุ่ม 5 ตัวอักษร
+    function genRoomId() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let id = '';
+      for (let i = 0; i < 5; i++) id += chars[Math.floor(Math.random() * chars.length)];
+      return id;
     }
 
-    const fmt = (num) => (num !== null && num !== undefined ? num.toFixed(2) : '0.00');
+    const pcRoomId = (urlRoom && urlMode !== 'phone') ? urlRoom.toUpperCase() : genRoomId();
+    document.getElementById('pcRoomCode').textContent = pcRoomId;
+    if (urlRoom) {
+      document.getElementById('phoneRoomInput').value = urlRoom.toUpperCase();
+    }
 
-    startBtn.addEventListener('click', async () => {
-      const permissionPromises = [];
+    // ==================== ส่วนสร้างฉาก 3 มิติ (Three.js) ====================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
 
-      // สำหรับ iOS 13+ ต้องขอ Permission จากผู้ใช้โดยตรงหลังการกดปุ่ม
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      100
+    );
+    camera.position.set(0, 2.2, 4.8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    // แสงสว่าง
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(4, 8, 5);
+    scene.add(dirLight);
+    const backLight = new THREE.DirectionalLight(0x38bdf8, 0.8);
+    backLight.position.set(-4, 3, -5);
+    scene.add(backLight);
+
+    // พื้นตาราง + แกนอ้างอิง
+    const grid = new THREE.GridHelper(10, 20, 0x38bdf8, 0x1e293b);
+    grid.position.y = -1.6;
+    scene.add(grid);
+
+    // สร้างพื้นผิวหน้าจอมือถือแบบ CanvasTexture (จะได้เห็นหน้าจอและทิศบน-ล่างชัดเจน)
+    function createScreenTexture() {
+      const cv = document.createElement('canvas');
+      cv.width = 256;
+      cv.height = 512;
+      const ctx = cv.getContext('2d');
+
+      const grad = ctx.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(0.5, '#1e3a8a');
+      grad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 512);
+
+      // ขอบเรืองแสง
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(10, 10, 236, 492);
+
+      // วงกลมเข็มทิศตรงกลาง
+      ctx.beginPath();
+      ctx.arc(128, 256, 70, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // ลูกศรชี้ขึ้นด้านบน (TOP)
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.moveTo(128, 120);
+      ctx.lineTo(106, 160);
+      ctx.lineTo(150, 160);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('TOP ↑', 128, 105);
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('SCREEN', 128, 263);
+
+      return new THREE.CanvasTexture(cv);
+    }
+
+    // สร้างโมเดลสมาร์ทโฟน 3 มิติ (แกนเครื่อง: กว้าง X, สูง Y, หนา Z หน้าจอหัน +Z)
+    const phoneGroup = new THREE.Group();
+
+    // ตัวเครื่องโลหะ
+    const bodyGeo = new THREE.BoxGeometry(1.05, 2.1, 0.12);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.6,
+      roughness: 0.3
+    });
+    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    phoneGroup.add(bodyMesh);
+
+    // หน้าจอด้านหน้า (+Z)
+    const screenGeo = new THREE.PlaneGeometry(0.96, 1.98);
+    const screenMat = new THREE.MeshBasicMaterial({ map: createScreenTexture() });
+    const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+    screenMesh.position.z = 0.062;
+    phoneGroup.add(screenMesh);
+
+    // เกาะกล้องหน้า (Dynamic Island)
+    const notchGeo = new THREE.BoxGeometry(0.28, 0.06, 0.01);
+    const notchMat = new THREE.MeshBasicMaterial({ color: 0x020617 });
+    const notchMesh = new THREE.Mesh(notchGeo, notchMat);
+    notchMesh.position.set(0, 0.88, 0.065);
+    phoneGroup.add(notchMesh);
+
+    // โมดูลกล้องด้านหลัง (-Z) จะได้แยกหน้า-หลังออกทันที
+    const camBumpGeo = new THREE.BoxGeometry(0.42, 0.48, 0.04);
+    const camBumpMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.5 });
+    const camBump = new THREE.Mesh(camBumpGeo, camBumpMat);
+    camBump.position.set(0.24, 0.72, -0.075);
+    phoneGroup.add(camBump);
+
+    const lensGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.03, 20);
+    lensGeo.rotateX(Math.PI / 2);
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9, roughness: 0.1 });
+    [
+      [0.34, 0.83],
+      [0.34, 0.62],
+      [0.14, 0.72]
+    ].forEach(([lx, ly]) => {
+      const lens = new THREE.Mesh(lensGeo, lensMat);
+      lens.position.set(lx, ly, -0.095);
+      phoneGroup.add(lens);
+    });
+
+    // ปุ่มข้างเครื่อง
+    const btnGeo = new THREE.BoxGeometry(0.03, 0.22, 0.05);
+    const powerBtn = new THREE.Mesh(btnGeo, new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+    powerBtn.position.set(0.53, 0.25, 0);
+    phoneGroup.add(powerBtn);
+
+    scene.add(phoneGroup);
+
+    // ตัวแปรเป้าหมายสำหรับหมุน/ขยับแบบนุ่มนวล
+    const targetQuaternion = new THREE.Quaternion();
+    const qEarthToThree = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
+    const targetOffset = new THREE.Vector3();
+
+    let lastRawAlpha = 0;
+    let yawOffset = null; // จะจับค่าแรกอัตโนมัติหรือตอนกดปุ่มปรับหน้าตรง
+
+    function resize3D() {
+      if (pcView.style.display === 'none') return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+    }
+    window.addEventListener('resize', resize3D);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      phoneGroup.quaternion.slerp(targetQuaternion, 0.35);
+      phoneGroup.position.lerp(targetOffset, 0.25);
+      targetOffset.multiplyScalar(0.85); // ค่อยๆ เด้งกลับเข้าศูนย์กลาง
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ==================== ส่วนระบบ QR Code และ MQTT ฝั่งคอม ====================
+    let pcClient = null;
+    let packetCount = 0;
+
+    function initPcMode() {
+      const qrBox = document.getElementById('qrcode');
+      qrBox.innerHTML = '';
+      const phoneUrl = `${window.location.origin}${window.location.pathname}?room=${pcRoomId}&mode=phone`;
+
+      if (window.QRCode) {
+        new window.QRCode(qrBox, {
+          text: phoneUrl,
+          width: 150,
+          height: 150,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: window.QRCode.CorrectLevel.M
+        });
+      }
+
+      if (pcClient) return;
+      if (!window.mqtt) {
+        document.getElementById('pcStatusText').textContent = 'โหลด MQTT ไม่สำเร็จ';
+        document.getElementById('pcDot').className = 'dot err';
+        return;
+      }
+
+      const pcDot = document.getElementById('pcDot');
+      const pcStatus = document.getElementById('pcStatusText');
+
+      pcClient = window.mqtt.connect(BROKER_URL, {
+        clientId: 'pc_' + Math.random().toString(16).slice(2, 10),
+        clean: true,
+        reconnectPeriod: 2000
+      });
+
+      pcClient.on('connect', () => {
+        pcDot.className = 'dot ok';
+        pcStatus.textContent = 'พร้อมรับข้อมูล (รอสแกนจากมือถือ)';
+        pcClient.subscribe(TOPIC_PREFIX + pcRoomId);
+      });
+
+      pcClient.on('error', () => {
+        pcDot.className = 'dot err';
+        pcStatus.textContent = 'เชื่อมต่อเซิร์ฟเวอร์ขัดข้อง';
+      });
+
+      pcClient.on('message', (topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+
+          if (data.cmd === 'recenter') {
+            yawOffset = data.a ?? lastRawAlpha;
+            return;
+          }
+
+          packetCount++;
+          pcStatus.textContent = '🟢 กำลังรับข้อมูลจากมือถือ Real-time';
+
+          const a = data.a ?? 0;
+          const b = data.b ?? 0;
+          const g = data.g ?? 0;
+          lastRawAlpha = a;
+
+          // จับค่าหน้าตรงครั้งแรกอัตโนมัติ
+          if (yawOffset === null) {
+            yawOffset = a;
+          }
+
+          // แปลง W3C DeviceOrientation (Z-X'-Y'') เป็นพิกัด Three.js
+          const alphaRad = THREE.MathUtils.degToRad(a - yawOffset);
+          const betaRad = THREE.MathUtils.degToRad(b);
+          const gammaRad = THREE.MathUtils.degToRad(g);
+
+          const euler = new THREE.Euler(betaRad, gammaRad, alphaRad, 'ZXY');
+          const qDevice = new THREE.Quaternion().setFromEuler(euler);
+          targetQuaternion.copy(qEarthToThree).multiply(qDevice);
+
+          // เพิ่มเอฟเฟกต์ขยับเล็กน้อยตามความเร่ง (เขย่า)
+          const ax = data.ax ?? 0;
+          const ay = data.ay ?? 0;
+          const az = data.az ?? 0;
+          targetOffset.set(
+            THREE.MathUtils.clamp(ax * 0.03, -0.4, 0.4),
+            THREE.MathUtils.clamp(az * 0.03, -0.4, 0.4),
+            THREE.MathUtils.clamp(-ay * 0.03, -0.4, 0.4)
+          );
+
+          // อัปเดตตัวเลขหน้าจอ
+          document.getElementById('v-a').textContent = a.toFixed(1) + '°';
+          document.getElementById('v-b').textContent = b.toFixed(1) + '°';
+          document.getElementById('v-g').textContent = g.toFixed(1) + '°';
+          document.getElementById('v-ax').textContent = ax.toFixed(2);
+          document.getElementById('v-ay').textContent = ay.toFixed(2);
+          document.getElementById('v-az').textContent = az.toFixed(2);
+        } catch (e) {
+          // ข้ามข้อความที่รูปแบบไม่ถูกต้อง
+        }
+      });
+    }
+
+    setInterval(() => {
+      document.getElementById('v-fps').textContent = `${packetCount} pkt/s`;
+      packetCount = 0;
+    }, 1000);
+
+    document.getElementById('recenterBtn').addEventListener('click', () => {
+      yawOffset = lastRawAlpha;
+    });
+
+    // ==================== ส่วนส่งข้อมูลจากมือถือ ====================
+    const phoneHttpsWarn = document.getElementById('phoneHttpsWarn');
+    const startSendBtn = document.getElementById('startSendBtn');
+    const phoneRecenterBtn = document.getElementById('phoneRecenterBtn');
+    const phoneDot = document.getElementById('phoneDot');
+    const phoneStatusText = document.getElementById('phoneStatusText');
+    const phoneRoomInput = document.getElementById('phoneRoomInput');
+
+    if (!window.isSecureContext) {
+      phoneHttpsWarn.style.display = 'block';
+    }
+
+    let phoneClient = null;
+    let sensorState = { a: 0, b: 0, g: 0, ax: 0, ay: 0, az: 0 };
+    let lastSent = 0;
+    let isSending = false;
+
+    function publishMotion() {
+      const now = Date.now();
+      if (!isSending || !phoneClient || !phoneClient.connected) return;
+      if (now - lastSent < 35) return; // ส่ง ~28-30 ครั้ง/วินาที เพื่อความลื่นไหลและไม่หน่วง
+      lastSent = now;
+
+      const room = phoneRoomInput.value.trim().toUpperCase();
+      if (!room) return;
+
+      const payload = JSON.stringify({
+        a: Number(sensorState.a.toFixed(1)),
+        b: Number(sensorState.b.toFixed(1)),
+        g: Number(sensorState.g.toFixed(1)),
+        ax: Number(sensorState.ax.toFixed(2)),
+        ay: Number(sensorState.ay.toFixed(2)),
+        az: Number(sensorState.az.toFixed(2))
+      });
+      phoneClient.publish(TOPIC_PREFIX + room, payload, { qos: 0 });
+    }
+
+    startSendBtn.addEventListener('click', async () => {
+      const room = phoneRoomInput.value.trim().toUpperCase();
+      if (!room) {
+        alert('กรุณากรอกรหัสห้องที่แสดงบนหน้าจอคอมก่อนครับ');
+        return;
+      }
+
+      // ขอสิทธิ์เข้าถึงเซนเซอร์ (สำหรับ iOS 13+)
+      const reqs = [];
       if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        permissionPromises.push(DeviceMotionEvent.requestPermission());
+        reqs.push(DeviceMotionEvent.requestPermission());
       }
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        permissionPromises.push(DeviceOrientationEvent.requestPermission());
+        reqs.push(DeviceOrientationEvent.requestPermission());
       }
-
-      if (permissionPromises.length > 0) {
+      if (reqs.length > 0) {
         try {
-          const results = await Promise.all(permissionPromises);
-          if (results.some((res) => res !== 'granted')) {
-            statusText.textContent = '❌ ผู้ใช้ไม่อนุญาตให้เข้าถึงเซนเซอร์';
+          const results = await Promise.all(reqs);
+          if (results.some((r) => r !== 'granted')) {
+            phoneStatusText.textContent = 'ไม่ได้รับอนุญาตเข้าถึงเซนเซอร์';
+            phoneDot.className = 'dot err';
             return;
           }
         } catch (err) {
-          statusText.textContent = '❌ เกิดข้อผิดพลาด: ' + err.message;
+          phoneStatusText.textContent = 'ขอสิทธิ์ไม่สำเร็จ: ' + err.message;
+          phoneDot.className = 'dot err';
           return;
         }
       }
 
-      // เริ่มดักฟังเหตุการณ์ Motion
-      window.addEventListener('devicemotion', (event) => {
-        const acc = event.acceleration || {};
-        const accG = event.accelerationIncludingGravity || {};
-        const rot = event.rotationRate || {};
+      startSendBtn.disabled = true;
+      startSendBtn.textContent = 'กำลังเชื่อมต่อ...';
+      phoneStatusText.textContent = 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
 
-        document.getElementById('ax').textContent = fmt(acc.x);
-        document.getElementById('ay').textContent = fmt(acc.y);
-        document.getElementById('az').textContent = fmt(acc.z);
+      if (!phoneClient) {
+        phoneClient = window.mqtt.connect(BROKER_URL, {
+          clientId: 'phone_' + Math.random().toString(16).slice(2, 10),
+          clean: true,
+          reconnectPeriod: 2000
+        });
+      }
 
-        document.getElementById('gx').textContent = fmt(accG.x);
-        document.getElementById('gy').textContent = fmt(accG.y);
-        document.getElementById('gz').textContent = fmt(accG.z);
+      const startStreaming = () => {
+        isSending = true;
+        phoneDot.className = 'dot ok';
+        phoneStatusText.textContent = `กำลังส่งค่าไปที่ห้อง ${room}`;
+        startSendBtn.textContent = '✅ กำลังส่งข้อมูลแบบ Real-time';
+        phoneRecenterBtn.style.display = 'block';
+        phoneRoomInput.disabled = true;
+      };
 
-        document.getElementById('ra').textContent = fmt(rot.alpha);
-        document.getElementById('rb').textContent = fmt(rot.beta);
-        document.getElementById('rg').textContent = fmt(rot.gamma);
+      if (phoneClient.connected) {
+        startStreaming();
+      } else {
+        phoneClient.on('connect', startStreaming);
+        phoneClient.on('error', () => {
+          phoneDot.className = 'dot err';
+          phoneStatusText.textContent = 'เชื่อมต่อไม่ได้ กรุณาลองใหม่';
+          startSendBtn.disabled = false;
+          startSendBtn.textContent = '🚀 ลองเชื่อมต่ออีกครั้ง';
+        });
+      }
+
+      window.addEventListener('deviceorientation', (e) => {
+        sensorState.a = e.alpha ?? 0;
+        sensorState.b = e.beta ?? 0;
+        sensorState.g = e.gamma ?? 0;
+        document.getElementById('m-a').textContent = sensorState.a.toFixed(1) + '°';
+        document.getElementById('m-b').textContent = sensorState.b.toFixed(1) + '°';
+        document.getElementById('m-g').textContent = sensorState.g.toFixed(1) + '°';
+        publishMotion();
       });
 
-      // เริ่มดักฟังเหตุการณ์ Orientation (มุมเอียง)
-      window.addEventListener('deviceorientation', (event) => {
-        document.getElementById('oa').textContent = fmt(event.alpha);
-        document.getElementById('ob').textContent = fmt(event.beta);
-        document.getElementById('og').textContent = fmt(event.gamma);
-
-        // ขยับลูกบอลตามมุม beta (ก้ม-เงย) และ gamma (เอียงซ้าย-ขวา)
-        if (event.beta !== null && event.gamma !== null) {
-          const maxOffset = 95;
-          const x = Math.max(-maxOffset, Math.min(maxOffset, event.gamma * 2));
-          const y = Math.max(-maxOffset, Math.min(maxOffset, event.beta * 2));
-          ball.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
-        }
+      window.addEventListener('devicemotion', (e) => {
+        const acc = e.acceleration || {};
+        sensorState.ax = acc.x ?? 0;
+        sensorState.ay = acc.y ?? 0;
+        sensorState.az = acc.z ?? 0;
+        const mag = Math.hypot(sensorState.ax, sensorState.ay, sensorState.az);
+        document.getElementById('m-acc').textContent = mag.toFixed(2) + ' m/s²';
+        publishMotion();
       });
-
-      startBtn.disabled = true;
-      startBtn.textContent = 'กำลังอ่านค่า...';
-      statusText.textContent = '✅ กำลังรับค่าจากเซนเซอร์ (ลองขยับหรือเอียงมือถือดูครับ)';
     });
+
+    phoneRecenterBtn.addEventListener('click', () => {
+      const room = phoneRoomInput.value.trim().toUpperCase();
+      if (phoneClient && phoneClient.connected && room) {
+        phoneClient.publish(
+          TOPIC_PREFIX + room,
+          JSON.stringify({ cmd: 'recenter', a: sensorState.a }),
+          { qos: 0 }
+        );
+      }
+    });
+
+    // ==================== สลับโหมดจอคอม / มือถือ ====================
+    function switchMode(mode) {
+      if (mode === 'phone') {
+        pcView.style.display = 'none';
+        phoneView.style.display = 'flex';
+        btnPhoneMode.classList.add('active');
+        btnPcMode.classList.remove('active');
+      } else {
+        phoneView.style.display = 'none';
+        pcView.style.display = 'flex';
+        btnPcMode.classList.add('active');
+        btnPhoneMode.classList.remove('active');
+        initPcMode();
+        setTimeout(resize3D, 50);
+      }
+    }
+
+    btnPcMode.addEventListener('click', () => switchMode('pc'));
+    btnPhoneMode.addEventListener('click', () => switchMode('phone'));
+
+    // เช็คอัตโนมัติว่าเปิดจากลิงก์ QR Code หรือไม่
+    if (urlMode === 'phone') {
+      switchMode('phone');
+    } else {
+      switchMode('pc');
+    }
   </script>
 </body>
 </html>
