@@ -1,1 +1,211 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ทดสอบรับค่า Motion มือถือ</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    .btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .btn:disabled {
+      background: #475569;
+      cursor: not-allowed;
+    }
+    .warning {
+      background: #991b1b;
+      color: #fecaca;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: none;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      max-width: 800px;
+      margin: 0 auto 20px;
+      text-align: left;
+    }
+    .card {
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+    }
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: #38bdf8;
+    }
+    .val {
+      font-family: monospace;
+      font-size: 15px;
+      margin: 4px 0;
+    }
+    /* กล่องจำลองลูกบอลกลิ้งตามความเอียง */
+    .arena {
+      width: 240px;
+      height: 240px;
+      background: #1e293b;
+      border: 2px solid #38bdf8;
+      border-radius: 50%;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+    .ball {
+      width: 30px;
+      height: 30px;
+      background: #f43f5e;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px #f43f5e;
+    }
+  </style>
+</head>
+<body>
 
+  <h2>📱 ทดสอบเซนเซอร์ Motion มือถือ</h2>
+
+  <div id="httpsWarning" class="warning">
+    ⚠️ เว็บนี้ไม่ได้เปิดผ่าน <b>HTTPS</b> เบราว์เซอร์บนมือถืออาจบล็อกไม่ให้อ่านค่าเซนเซอร์ได้
+  </div>
+
+  <button id="startBtn" class="btn">เริ่มอ่านค่าเซนเซอร์</button>
+  <p id="status" style="color: #94a3b8; font-size: 14px;">กดปุ่มด้านบนเพื่อขอสิทธิ์และเริ่มทำงาน</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>ความเร่ง (Acceleration - ไม่รวมแรงโน้มถ่วง)</h3>
+      <div class="val">X (ซ้าย-ขวา): <span id="ax">0</span> m/s²</div>
+      <div class="val">Y (บน-ล่าง): <span id="ay">0</span> m/s²</div>
+      <div class="val">Z (หน้า-หลัง): <span id="az">0</span> m/s²</div>
+    </div>
+
+    <div class="card">
+      <h3>ความเร่งรวมแรงโน้มถ่วง (Incl. Gravity)</h3>
+      <div class="val">X: <span id="gx">0</span> m/s²</div>
+      <div class="val">Y: <span id="gy">0</span> m/s²</div>
+      <div class="val">Z: <span id="gz">0</span> m/s²</div>
+    </div>
+
+    <div class="card">
+      <h3>ความเร็วการหมุน (Gyroscope)</h3>
+      <div class="val">Alpha (Z): <span id="ra">0</span> °/s</div>
+      <div class="val">Beta (X): <span id="rb">0</span> °/s</div>
+      <div class="val">Gamma (Y): <span id="rg">0</span> °/s</div>
+    </div>
+
+    <div class="card">
+      <h3>มุมเอียงของเครื่อง (Orientation)</h3>
+      <div class="val">Alpha (หมุนแนวราบ): <span id="oa">0</span>°</div>
+      <div class="val">Beta (ก้ม-เงย): <span id="ob">0</span>°</div>
+      <div class="val">Gamma (เอียงซ้าย-ขวา): <span id="og">0</span>°</div>
+    </div>
+  </div>
+
+  <p style="font-size: 14px; color: #cbd5e1;">ลองเอียงมือถือเพื่อขยับลูกบอล</p>
+  <div class="arena">
+    <div id="ball" class="ball"></div>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const statusText = document.getElementById('status');
+    const httpsWarning = document.getElementById('httpsWarning');
+    const ball = document.getElementById('ball');
+
+    // เช็คว่าเป็น HTTPS หรือไม่
+    if (!window.isSecureContext) {
+      httpsWarning.style.display = 'block';
+    }
+
+    const fmt = (num) => (num !== null && num !== undefined ? num.toFixed(2) : '0.00');
+
+    startBtn.addEventListener('click', async () => {
+      const permissionPromises = [];
+
+      // สำหรับ iOS 13+ ต้องขอ Permission จากผู้ใช้โดยตรงหลังการกดปุ่ม
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        permissionPromises.push(DeviceMotionEvent.requestPermission());
+      }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        permissionPromises.push(DeviceOrientationEvent.requestPermission());
+      }
+
+      if (permissionPromises.length > 0) {
+        try {
+          const results = await Promise.all(permissionPromises);
+          if (results.some((res) => res !== 'granted')) {
+            statusText.textContent = '❌ ผู้ใช้ไม่อนุญาตให้เข้าถึงเซนเซอร์';
+            return;
+          }
+        } catch (err) {
+          statusText.textContent = '❌ เกิดข้อผิดพลาด: ' + err.message;
+          return;
+        }
+      }
+
+      // เริ่มดักฟังเหตุการณ์ Motion
+      window.addEventListener('devicemotion', (event) => {
+        const acc = event.acceleration || {};
+        const accG = event.accelerationIncludingGravity || {};
+        const rot = event.rotationRate || {};
+
+        document.getElementById('ax').textContent = fmt(acc.x);
+        document.getElementById('ay').textContent = fmt(acc.y);
+        document.getElementById('az').textContent = fmt(acc.z);
+
+        document.getElementById('gx').textContent = fmt(accG.x);
+        document.getElementById('gy').textContent = fmt(accG.y);
+        document.getElementById('gz').textContent = fmt(accG.z);
+
+        document.getElementById('ra').textContent = fmt(rot.alpha);
+        document.getElementById('rb').textContent = fmt(rot.beta);
+        document.getElementById('rg').textContent = fmt(rot.gamma);
+      });
+
+      // เริ่มดักฟังเหตุการณ์ Orientation (มุมเอียง)
+      window.addEventListener('deviceorientation', (event) => {
+        document.getElementById('oa').textContent = fmt(event.alpha);
+        document.getElementById('ob').textContent = fmt(event.beta);
+        document.getElementById('og').textContent = fmt(event.gamma);
+
+        // ขยับลูกบอลตามมุม beta (ก้ม-เงย) และ gamma (เอียงซ้าย-ขวา)
+        if (event.beta !== null && event.gamma !== null) {
+          const maxOffset = 95;
+          const x = Math.max(-maxOffset, Math.min(maxOffset, event.gamma * 2));
+          const y = Math.max(-maxOffset, Math.min(maxOffset, event.beta * 2));
+          ball.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+        }
+      });
+
+      startBtn.disabled = true;
+      startBtn.textContent = 'กำลังอ่านค่า...';
+      statusText.textContent = '✅ กำลังรับค่าจากเซนเซอร์ (ลองขยับหรือเอียงมือถือดูครับ)';
+    });
+  </script>
+</body>
+</html>
